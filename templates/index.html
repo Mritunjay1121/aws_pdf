@@ -1,0 +1,842 @@
+
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PDF Table Extractor</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        table { 
+            border-collapse: collapse; 
+            margin: 20px 0; 
+            width: 100%;
+        }
+
+        th, td { 
+            border: 1px solid black; 
+            padding: 8px; 
+            text-align: left;
+        }
+
+        .table-container { 
+            margin-bottom: 30px; 
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        #extractButton { 
+            display: none; 
+            margin: 10px 0; 
+        }
+
+        #loadingMessage { 
+            display: none; 
+            color: blue;
+            margin: 10px 0;
+        }
+
+        .edit-controls {
+            margin: 10px 0;
+            padding: 15px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+
+        .editable-cell {
+            cursor: pointer;
+        }
+
+        .editable-cell:hover {
+            background-color: #f0f0f0;
+        }
+
+        .save-button {
+            margin-top: 10px;
+            padding: 8px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .control-group {
+            margin: 10px 0;
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        #downloadAllTables {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        #downloadAllTables:hover {
+            background-color: #45a049;
+        }
+
+        #downloadAllTables:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .undo-button {
+            background-color: #808080;
+            color: white;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+
+        .undo-button:hover {
+            background-color: #666666;
+        }
+
+        .undo-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .upload-section {
+            margin-bottom: 20px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        input[type="file"] {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 100%;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .help-text {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+
+        select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-right: 5px;
+        }
+        .table-name {
+            cursor: pointer;
+        }
+
+        .table-name:hover {
+            text-decoration: underline;
+        }
+
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PDF Table Extractor</h1>
+        
+        <div class="upload-section">
+            <div class="form-group">
+                <label for="fileInput">Select File(s):</label>
+                <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg" multiple>
+                <div class="help-text">You can select one or multiple files (PDF, PNG, JPG, JPEG)</div>
+            </div>
+            
+            <div class="form-group">
+                <label for="pageNumbers">Enter page numbers:</label>
+                <input type="text" id="pageNumbers" placeholder="e.g., 1,2,3 for single file or 1,2|3,4 for multiple files">
+                <div class="help-text">
+                    For single file: Enter comma-separated pages (e.g., 1,2,3 or -1 for all pages)<br>
+                    For multiple files: Use | to separate files (e.g., -1|1,2 for all first, 1,2|-1 for all second)<br>
+                    Use -1 to include all pages
+                </div>
+            </div>
+
+            <button id="extractButton" class="save-button">Extract Tables</button>
+            <div id="loadingMessage">Processing... Please wait...</div>
+        </div>
+
+        <div id="tablesContainer"></div>
+        <div id="downloadAllTablesContainer">
+            <select id="tableFormat">
+                <option value="one">One Excel with Multiple Sheets</option>
+                <option value="multiple">Multiple Excels</option>
+            </select>
+            <button id="downloadAllTables" style="display: none; margin-top: 20px;" class="save-button">Download All Tables</button>
+        </div>
+
+
+        
+        <!-- <button id="downloadAllTables" style="display: none; margin-top: 20px;" class="save-button">Download All Tables</button> -->
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            let selectedFiles = null;
+            let tables = [];
+            let tableHistory = [];
+
+            $('#fileInput').on('change', function(e) {
+                selectedFiles = e.target.files;
+                if (selectedFiles.length > 0) {
+                    $('#extractButton').show();
+                    $('#tablesContainer').empty();
+                }
+            });
+
+  
+
+
+            $('#downloadAllTables').on('click', function() {
+                if (tables.length === 0) {
+                    alert('No tables to save');
+                    return;
+                }
+
+                const format = $('#tableFormat').val(); // Get the selected format
+
+                const originalText = $(this).text();
+                $(this).text('Saving...').prop('disabled', true);
+
+                $.ajax({
+                    url: '/download_all_tables',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ 
+                        tables: tables, 
+                        format: format 
+                    }),
+                    success: function(response) {
+                        if (response.success) {
+                            alert(response.message);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        var errorMessage = xhr.responseJSON?.error || 'Error saving tables';
+                        alert(errorMessage);
+                    },
+                    complete: function() {
+                        $('#downloadAllTables').text(originalText).prop('disabled', false);
+                    }
+                });
+            });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            $('#extractButton').on('click', function() {
+                if (!selectedFiles || selectedFiles.length === 0) {
+                    alert('Please select at least one file');
+                    return;
+                }
+
+                const formData = new FormData();
+                
+                for (let i = 0; i < selectedFiles.length; i++) {
+                    formData.append('files[]', selectedFiles[i]);
+                }
+
+                const pageNumbers = $('#pageNumbers').val();
+                if (pageNumbers) {
+                    formData.append('pages', pageNumbers);
+                }
+
+                $('#loadingMessage').show();
+                $('#extractButton').prop('disabled', true);
+
+                $.ajax({
+                    url: '/upload',
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function(response) {
+                        $('#loadingMessage').hide();
+                        $('#extractButton').prop('disabled', false);
+                        
+                        if (response.error) {
+                            alert(response.error);
+                            return;
+                        }
+
+                        if (response.tables && Array.isArray(response.tables)) {
+                            // tables = response.tables.map(table => ({
+                            //     columns: table.columns || [],
+                            //     data: table.data || []
+                            // }));
+                            tables = response.tables.map((table, idx) => ({
+                                name: table.name || `Table ${idx + 1}`,
+                                columns: table.columns || [],
+                                data: table.data || []
+                            }));
+
+
+
+                            
+                            if (tables.length > 0) {
+                                displayTables(tables);
+                            } else {
+                                $('#tablesContainer').html('No tables found in the document');
+                            }
+                        } else {
+                            $('#tablesContainer').html('Invalid table data received');
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        $('#loadingMessage').hide();
+                        $('#extractButton').prop('disabled', false);
+                        var errorMessage = xhr.responseJSON?.error || 'An error occurred while processing the file.';
+                        alert(errorMessage);
+                    }
+                });
+            });
+
+            function modifyTable(tableIndex, action, params) {
+                const originalState = JSON.parse(JSON.stringify(tables[tableIndex]));
+                
+                const data = {
+                    table_index: tableIndex,
+                    action: action,
+                    table_data: {
+                        columns: tables[tableIndex].columns,
+                        data: tables[tableIndex].data
+                    },
+                    ...params
+                };
+
+                $.ajax({
+                    url: '/modify_table',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(data),
+                    success: function(response) {
+                        if (response.success) {
+                            tableHistory.push({
+                                tableIndex: tableIndex,
+                                previousState: originalState
+                            });
+                            
+                            tables[tableIndex] = response.table;
+                            displayTables(tables);
+                        }
+                    },
+                    error: function(error) {
+                        alert(error.responseJSON?.error || 'Error modifying table');
+                    }
+                });
+            };
+            window.editTableName = function(element, tableIndex) {
+                if ($(element).find('input').length > 0) {
+                    return; // Prevent multiple inputs
+                }
+                
+                const currentName = tables[tableIndex].name;
+                const input = $(`<input type="text" value="${currentName}">`);
+                $(element).html(input);
+                input.focus();
+
+                input.on('blur', function() {
+                    const newName = $(this).val();
+                    if (newName.trim() !== '') {
+                        tables[tableIndex].name = newName;
+                        $(element).text(newName);
+                    } else {
+                        tables[tableIndex].name = currentName;
+                        $(element).text(currentName);
+                    }
+                });
+
+                input.on('keypress', function(e) {
+                    if (e.which === 13) { // Enter key
+                        $(this).blur();
+                    }
+                    if (e.which === 27) { // Escape key
+                        $(element).text(currentName);
+                    }
+                });
+
+                input.on('click', function(e) {
+                    e.stopPropagation();
+                });
+            };
+
+
+
+
+
+
+
+
+
+            window.editCell = function(cell, tableIndex, rowIndex, column) {
+
+
+                if (rowIndex === -1) { // -1 indicates header row
+                    if ($(cell).find('input').length > 0) {
+                        return;
+                    }
+
+                    const currentValue = $(cell).text();
+                    const input = $(`<input type="text" value="${currentValue}">`);
+                    
+                    $(cell).html(input);
+                    input.focus();
+
+                    input.on('blur', function() {
+                        const newValue = $(this).val();
+                        if (newValue !== currentValue) {
+                            modifyTable(tableIndex, 'edit_column_name', {
+                                old_column_name: currentValue,
+                                new_column_name: newValue
+                            });
+                        } else {
+                            $(cell).html(currentValue);
+                        }
+                    });
+
+                    input.on('keypress', function(e) {
+                        if (e.which === 13) {
+                            $(this).blur();
+                        }
+                        if (e.which === 27) {
+                            $(cell).html(currentValue);
+                        }
+                    });
+
+                    input.on('click', function(e) {
+                        e.stopPropagation();
+                    });
+                } else {
+
+
+                    if ($(cell).find('input').length > 0) {
+                        return;
+                    }
+
+                    const currentValue = $(cell).text();
+                    const input = $(`<input type="text" value="${currentValue}">`);
+                    
+                    const originalState = JSON.parse(JSON.stringify(tables[tableIndex]));
+                    
+                    $(cell).html(input);
+                    input.focus();
+
+                    input.on('blur', function() {
+                        const newValue = $(this).val();
+                        if (newValue !== currentValue) {
+                            tableHistory.push({
+                                tableIndex: tableIndex,
+                                previousState: originalState
+                            });
+                            
+                            modifyTable(tableIndex, 'edit_cell', {
+                                row_index: rowIndex,
+                                column_name: column,
+                                new_value: newValue
+                            });
+                        } else {
+                            $(cell).html(currentValue);
+                        }
+                    });
+
+                    input.on('keypress', function(e) {
+                        if (e.which === 13) {
+                            $(this).blur();
+                        }
+                        if (e.which === 27) {
+                            $(cell).html(currentValue);
+                        }
+                    });
+
+                    input.on('click', function(e) {
+                        e.stopPropagation();
+                    });
+
+
+
+
+
+
+
+
+
+                }
+            };
+
+
+
+            window.undoLastChange = function(tableIndex) {
+                const lastChange = tableHistory.pop();
+                if (lastChange && lastChange.tableIndex === tableIndex) {
+                    tables[tableIndex] = lastChange.previousState;
+                    displayTables(tables);
+                } else {
+                    alert('No more changes to undo for this table');
+                }
+            };
+
+            window.addRow = function(tableIndex) {
+                const rowIndex = parseInt($(`#addRow_${tableIndex}`).val());
+                modifyTable(tableIndex, 'add_row', { row_index: rowIndex });
+            };
+
+            window.deleteColumn = function(tableIndex) {
+                const colName = $(`#delCol_${tableIndex}`).val();
+                if (confirm(`Are you sure you want to delete column "${colName}"?`)) {
+                    modifyTable(tableIndex, 'delete_column', { column_name: colName });
+                }
+            };
+
+            window.addColumn = function(tableIndex) {
+                const newColName = $(`#newCol_${tableIndex}`).val();
+                const columnIndex = parseInt($(`#addCol_${tableIndex}`).val());
+                if (!newColName) {
+                    alert('Please enter a column name');
+                    return;
+                }
+                modifyTable(tableIndex, 'add_column', {
+                    column_name: newColName,
+                    column_index: columnIndex
+                });
+                displayTables(tables); 
+                
+
+
+
+            };
+
+            window.deleteRow = function(tableIndex) {
+                const rowIndex = parseInt($(`#delRow_${tableIndex}`).val());
+                if (confirm(`Are you sure you want to delete row ${rowIndex + 1}?`)) {
+                    modifyTable(tableIndex, 'delete_row', { row_index: rowIndex });
+                }
+            };
+
+
+            window.saveTable = function(tableIndex) {
+                $.ajax({
+                    url: '/save_table',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        // Removed table_index since it's not needed
+                        table_data: tables[tableIndex]  // This should include the 'name' property now
+                    }),
+                    success: function(response) {
+                        alert(`Table "${tables[tableIndex].name}" saved successfully as ${response.filename}!`);
+                    },
+                    error: function(error) {
+                        alert('Error saving table');
+                    }
+                });
+            };
+
+            
+
+
+
+
+            function displayTables(tables) {
+                const container = $('#tablesContainer');
+                container.empty();
+
+                tables.forEach((table, index) => {
+                    if (!table.columns || !table.data) {
+                        console.error('Invalid table format:', table);
+                        return;
+                    }
+
+                    const tableDiv = $('<div class="table-container">');
+                    // tableDiv.append(`<h3>Table ${index + 1}</h3>`);
+                    tableDiv.append(`
+                        <h3 class="table-name" onclick="editTableName(this, ${index})">
+                            ${table.name}
+                        </h3>
+                    `);
+
+
+
+                    
+                    const editControls = $(`
+                        <div class="edit-controls">
+                            
+                            <div class="control-group">
+                                <input type="text" placeholder="New column name" id="newCol_${index}">
+                                <select id="addCol_${index}">
+                                    ${table.columns.map((_, idx) => 
+                                        `<option value="${idx}">After Column ${idx + 1}</option>`
+                                    ).join('')}
+                                    <option value="${table.columns.length}">At End</option>
+                                </select>
+                                <button onclick="addColumn(${index})">Add Column</button>
+                            </div>
+                            
+                            
+
+                           
+
+
+
+
+
+
+                            
+                            <div class="control-group">
+                                <select id="delCol_${index}">
+                                    ${table.columns.map(col => `<option value="${col}">${col}</option>`).join('')}
+                                </select>
+                                <button onclick="deleteColumn(${index})">Delete Column</button>
+                            </div>
+
+                            <div class="control-group">
+                                <select id="addRow_${index}">
+                                    ${Array.from({ length: table.data.length + 1 }, (_, idx) => 
+                                        `<option value="${idx}">${idx === table.data.length ? 'At End' : `After Row ${idx + 1}`}</option>`
+                                    ).join('')}
+                                </select>
+                                <button onclick="addRow(${index})">Add Row</button>
+                                <select id="delRow_${index}">
+                                    ${table.data.map((_, idx) => 
+                                        `<option value="${idx}">Row ${idx + 1}</option>`
+                                    ).join('')}
+                                </select>
+                                <button onclick="deleteRow(${index})">Delete Selected Row</button>
+                            </div>
+
+                            <div class="control-group">
+                                <button onclick="undoLastChange(${index})" class="undo-button">Undo Last Change</button>
+                                <button class="save-button" onclick="saveTable(${index})">Save Table ${index+1}</button>
+                            </div>
+
+
+
+
+
+
+
+                            
+
+                            <div class="control-group">
+                                <label>Adjust Numeric Columns:</label>
+                                ${table.columns.map((column, colIndex) => {
+                                    const isNumeric = table.data.some(row => !isNaN(parseFloat(row[column])) && isFinite(row[column]));
+                                    if (isNumeric) {
+                                        return `
+                                            <div>
+                                                <span>${column}:</span>
+                                                <select id="adjust_${index}_${colIndex}" class="adjust-dropdown">
+                                                    <option value="">Select</option>
+                                                    <option value="multiply_10">Multiply by 10</option>
+                                                    <option value="multiply_100">Multiply by 100</option>
+                                                    <option value="multiply_1000">Multiply by 1,000</option>
+                                                    <option value="multiply_100000">Multiply by 100,000</option>
+                                                    <option value="divide_10">Divide by 10</option>
+                                                    <option value="divide_100">Divide by 100</option>
+                                                    <option value="divide_1000">Divide by 1,000</option>
+                                                    <option value="divide_100000">Divide by 100,000</option>
+                                                </select>
+                                            </div>
+                                        `;
+                                    }
+                                    return '';
+                                }).join('')}
+                            </div>
+
+
+
+
+
+
+
+
+
+                        </div>
+                    `);
+                    tableDiv.append(editControls);
+                    
+                    let tableHtml = `<table id="table_${index}">`;
+                    tableHtml += '<tr><th>#</th>';
+                    // table.columns.forEach(column => {
+                    //     tableHtml += `<th>${column}</th>`;
+                    // });
+
+                    table.columns.forEach(column => {
+                        tableHtml += `<th class="editable-cell" onclick="editCell(this, ${index}, -1, '${column}')">${column}</th>`;
+                    });
+
+                    
+
+
+                    
+
+
+                    tableHtml += '</tr>';
+                    
+                    table.data.forEach((row, rowIndex) => {
+                        tableHtml += `<tr><td>${rowIndex + 1}</td>`;
+                        table.columns.forEach(column => {
+                            const cellValue = row[column] !== undefined ? row[column] : '';
+                            tableHtml += `<td class="editable-cell" onclick="editCell(this, ${index}, ${rowIndex}, '${column}')">${cellValue}</td>`;
+                        });
+                        tableHtml += '</tr>';
+                    });
+                    
+                    tableHtml += '</table>';
+                    tableDiv.append(tableHtml);
+                    container.append(tableDiv);
+
+                    table.columns.forEach((column, colIndex) => {
+                        const isNumeric = table.data.some(row => !isNaN(parseFloat(row[column])) && isFinite(row[column]));
+                        if (isNumeric) {
+                            $(`#adjust_${index}_${colIndex}`).on('change', function() {
+                                const action = this.value.split('_');
+                                const operation = action[0];
+                                const factor = parseInt(action[1]);
+                                modifyTable(index, 'adjust_numeric', {
+                                    column_name: column,
+                                    operation: operation,
+                                    factor: factor
+                                });
+                            });
+                        }
+                    });
+
+                    setTimeout(() => {
+                        table.columns.forEach((column, colIndex) => {
+                            const isNumeric = table.data.some(row => !isNaN(parseFloat(row[column])) && isFinite(row[column]));
+                            if (isNumeric) {
+                                const dropdown = $(`#adjust_${index}_${colIndex}`);
+                                if (dropdown.length) { // Check if dropdown exists in DOM
+                                    dropdown.on('change', function() {
+                                        const action = this.value.split('_');
+                                        const operation = action[0];
+                                        const factor = parseInt(action[1]);
+                                        modifyTable(index, 'adjust_numeric', {
+                                            column_name: column,
+                                            operation: operation,
+                                            factor: factor
+                                        });
+                                    });
+                                }
+                            }
+                        });
+                    }, 0); 
+
+                    
+
+
+
+
+
+
+                });
+
+                if (tables.length > 0) {
+                    $('#downloadAllTables').show();
+                } else {
+                    $('#downloadAllTables').hide();
+                }
+
+                // $(document).on('change', '.adjust-dropdown', function() {
+                //     const parts = this.id.split('_');
+                //     const index = parseInt(parts[1]);
+                //     const colIndex = parseInt(parts[2]);
+                //     const column = tables[index].columns[colIndex];
+                //     const action = this.value.split('_');
+                //     const operation = action[0];
+                //     const factor = parseInt(action[1]);
+                //     modifyTable(index, 'adjust_numeric', {
+                //         column_name: column,
+                //         operation: operation,
+                //         factor: factor
+                //     });
+                // });
+
+                // requestAnimationFrame(function() {
+                //     $('.adjust-dropdown').off('change').on('change', function() {
+                //         const parts = this.id.split('_');
+                //         const index = parseInt(parts[1]);
+                //         const colIndex = parseInt(parts[2]);
+                //         const column = tables[index].columns[colIndex];
+                //         const action = this.value.split('_');
+                //         const operation = action[0];
+                //         const factor = parseInt(action[1]);
+                //         modifyTable(index, 'adjust_numeric', {
+                //             column_name: column,
+                //             operation: operation,
+                //             factor: factor
+                //         });
+                //     });
+                // });
+
+
+
+
+
+
+
+
+            }
+        });
+    </script>
+</body>
+</html>
+
+
